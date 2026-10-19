@@ -5,37 +5,9 @@ import sqlite3
 
 app = FastAPI()
 
-# Stage 0: Database Setup
-def init_db():
-    conn = sqlite3.connect("tasks.db")
-    cursor = conn.cursor()
-    
-    # Create table if it does not exist
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            done INTEGER NOT NULL DEFAULT 0
-        )
-    ''')
-    
-    # Check if the table is empty
-    cursor.execute("SELECT COUNT(*) FROM tasks")
-    count = cursor.fetchone()[0]
-    
-    # Seed 3 example tasks only if the table is empty
-    if count == 0:
-        examples = [
-            ("Learn FastAPI", 0),
-            ("Build CRUD API", 0),
-            ("Push to GitHub", 0)
-        ]
-        cursor.executemany("INSERT INTO tasks (title, done) VALUES (?, ?)", examples)
-        conn.commit()
-        
-    conn.close()
+from repository import init_db
 
-# Run database setup when the application starts
+# Run database setup when application starts
 init_db()
 
 # Pydantic models for incoming data validation
