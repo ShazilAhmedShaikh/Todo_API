@@ -5,7 +5,15 @@ import sqlite3
 
 app = FastAPI()
 
-from repository import init_db
+from fastapi.responses import JSONResponse
+from repository import init_db, get_all_tasks, get_task_by_id
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail, "detail": exc.detail}
+    )
 
 # Run database setup when application starts
 init_db()
@@ -32,40 +40,17 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row # Is se row ka data dictionary ki tarah access ho sakta hai
     return conn
 
-# Stage 1: GET endpoints
+# Stage 2: Read from Postgres
 @app.get("/tasks")
 def get_tasks():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks")
-    rows = cursor.fetchall()
-    conn.close()
-    
-    tasks_list = []
-    for row in rows:
-        tasks_list.append({
-            "id": row["id"],
-            "title": row["title"],
-            "done": bool(row["done"]) 
-        })
-    return tasks_list
+    return get_all_tasks()
 
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row is None:
+    task = get_task_by_id(task_id)
+    if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-        
-    return {
-        "id": row["id"],
-        "title": row["title"],
-        "done": bool(row["done"])
-    }
+    return task
 
 # Stage 2: POST endpoint (Insert into database)
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)

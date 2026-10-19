@@ -45,6 +45,18 @@ def init_db():
                 )
         conn.commit()
 
+def get_all_tasks() -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, title, done FROM tasks ORDER BY id ASC;")
+            return cursor.fetchall()
+
+def get_task_by_id(task_id: int) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, title, done FROM tasks WHERE id = %s;", (task_id,))
+            return cursor.fetchone()
+
 def ping_db() -> bool:
     try:
         with get_connection() as conn:
