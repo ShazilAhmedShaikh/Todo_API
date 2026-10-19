@@ -1,12 +1,18 @@
-from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel
 from typing import Optional
-import sqlite3
+from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from repository import (
+    init_db,
+    get_all_tasks,
+    get_task_by_id,
+    create_task,
+    update_task,
+    delete_task,
+    ping_db
+)
 
 app = FastAPI()
-
-from fastapi.responses import JSONResponse
-from repository import init_db, get_all_tasks, get_task_by_id
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc: HTTPException):
@@ -32,13 +38,8 @@ def read_root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
-
-# Database connection ke liye helper function
-def get_db_connection():
-    conn = sqlite3.connect("tasks.db")
-    conn.row_factory = sqlite3.Row # Is se row ka data dictionary ki tarah access ho sakta hai
-    return conn
+    db_ok = ping_db()
+    return {"status": "ok", "db": "ok" if db_ok else "unavailable"}
 
 # Stage 2: Read from Postgres
 @app.get("/tasks")
@@ -52,70 +53,27 @@ def get_task(task_id: int):
         raise HTTPException(status_code=404, detail="Task not found")
     return task
 
-# Stage 2: POST endpoint (Insert into database)
+# Stage 3: Create, update, delete on Postgres
 @app.post("/tasks", status_code=status.HTTP_201_CREATED)
-def create_task(task: TaskCreate):
-    if not task.title.strip():
+def create_new_task(task: TaskCreate):
+    if not task.title or not task.title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    return create_task(title=task.title.strip())
+
+@app.put("/tasks/{task_id}")
+def update_existing_task(task_id: int, task_update: TaskUpdate):
+    if task_update.title is not None and not task_update.title.strip():
         raise HTTPException(status_code=400, detail="Title cannot be empty")
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("INSERT INTO tasks (title, done) VALUES (?, ?)", (task.title, 0))
-    conn.commit()
-    new_id = cursor.lastrowid 
-    conn.close()
-    
-    return {"id": new_id, "title": task.title, "done": False}
-
-# Stage 3: PUT endpoint (Update in database)
-@app.put("/tasks/{task_id}")
-def update_task(task_id: int, task_update: TaskUpdate):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Pehle check karein ke task maujood hai ya nahi
-    cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    row = cursor.fetchone()
-    
-    if row is None:
-        conn.close()
+    clean_title = task_update.title.strip() if task_update.title is not None else None
+    updated = update_task(task_id, title=clean_title, done=task_update.done)
+    if updated is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    
-    # Naya data set karein
-    new_title = row["title"]
-    new_done = row["done"]
-    
-    if task_update.title is not None:
-        if not task_update.title.strip():
-            conn.close()
-            raise HTTPException(status_code=400, detail="Title cannot be empty")
-        new_title = task_update.title
-        
-    if task_update.done is not None:
-        new_done = 1 if task_update.done else 0
-        
-    # Database mein update karein
-    cursor.execute("UPDATE tasks SET title = ?, done = ? WHERE id = ?", (new_title, new_done, task_id))
-    conn.commit()
-    conn.close()
-    
-    return {"id": task_id, "title": new_title, "done": bool(new_done)}
+    return updated
 
-# Stage 3: DELETE endpoint (Delete from database)
 @app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Pehle check karein ke task maujood hai ya nahi
-    cursor.execute("SELECT id FROM tasks WHERE id = ?", (task_id,))
-    if cursor.fetchone() is None:
-        conn.close()
+def delete_existing_task(task_id: int):
+    deleted = delete_task(task_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Task not found")
-        
-    # Task delete karein
-    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    conn.commit()
-    conn.close()
-    return
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

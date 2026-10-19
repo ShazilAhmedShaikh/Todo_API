@@ -57,6 +57,41 @@ def get_task_by_id(task_id: int) -> Optional[Dict[str, Any]]:
             cursor.execute("SELECT id, title, done FROM tasks WHERE id = %s;", (task_id,))
             return cursor.fetchone()
 
+def create_task(title: str, done: bool = False) -> Dict[str, Any]:
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO tasks (title, done) VALUES (%s, %s) RETURNING id, title, done;",
+                (title, done)
+            )
+            created = cursor.fetchone()
+        conn.commit()
+        return created
+
+def update_task(task_id: int, title: Optional[str] = None, done: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+    existing = get_task_by_id(task_id)
+    if existing is None:
+        return None
+    new_title = title if title is not None else existing["title"]
+    new_done = done if done is not None else existing["done"]
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE tasks SET title = %s, done = %s WHERE id = %s RETURNING id, title, done;",
+                (new_title, new_done, task_id)
+            )
+            updated = cursor.fetchone()
+        conn.commit()
+        return updated
+
+def delete_task(task_id: int) -> bool:
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM tasks WHERE id = %s RETURNING id;", (task_id,))
+            deleted = cursor.fetchone()
+        conn.commit()
+        return deleted is not None
+
 def ping_db() -> bool:
     try:
         with get_connection() as conn:
